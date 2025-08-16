@@ -274,6 +274,66 @@ fn collided_with_shape_moving_from(
     )
 }
 
+fn handle_honey_block_collision(world: &Instance, block_pos: BlockPos, physics: &mut Physics) {
+    if is_entity_sliding_on_honey_block(block_pos, physics) {
+        update_sliding_velocity_on_honey_block(physics);
+        physics.reset_fall_distance();
+    }
+}
+
+fn is_entity_sliding_on_honey_block(block_pos: BlockPos, physics: &Physics) -> bool {
+    // Entity must not be on ground
+    if physics.on_ground() {
+        return false;
+    }
+
+    // Entity must be below a certain Y threshold relative to the honey block
+    let entity_y = physics.old_position.y;
+    if entity_y > (block_pos.y as f64) + 0.9375 - 1.0e-7 {
+        return false;
+    }
+
+    // Check Y velocity condition (converted from method_65067)
+    let adjusted_y_velocity = physics.velocity.y / 0.98 + 0.08;
+    if adjusted_y_velocity >= -0.08 {
+        return false;
+    }
+
+    // Check horizontal distance from honey block center
+    let entity_x = physics.old_position.x;
+    let entity_z = physics.old_position.z;
+    let block_center_x = block_pos.x as f64 + 0.5;
+    let block_center_z = block_pos.z as f64 + 0.5;
+    
+    let distance_x = (block_center_x - entity_x).abs();
+    let distance_z = (block_center_z - entity_z).abs();
+    
+    // Entity width is approximately 0.6 for players, but we'll use a reasonable default
+    let entity_width = 0.6; // This should ideally come from entity dimensions
+    let threshold = 0.4375 + entity_width / 2.0;
+    
+    distance_x + 1.0e-7 > threshold || distance_z + 1.0e-7 > threshold
+}
+
+fn update_sliding_velocity_on_honey_block(physics: &mut Physics) {
+    let velocity = &mut physics.velocity;
+    
+    // Convert Y velocity using method_65067 equivalent
+    let adjusted_y_velocity = velocity.y / 0.98 + 0.08;
+    
+    if adjusted_y_velocity < -0.13 {
+        // Slow down horizontal movement proportionally
+        let factor = -0.05 / adjusted_y_velocity;
+        velocity.x *= factor;
+        velocity.z *= factor;
+        // Set Y velocity to converted -0.05 using method_65068 equivalent
+        velocity.y = (-0.05 - 0.08) * 0.98;
+    } else {
+        // Set Y velocity to converted -0.05 using method_65068 equivalent  
+        velocity.y = (-0.05 - 0.08) * 0.98;
+    }
+}
+
 // BlockBehavior.entityInside
 fn handle_entity_inside_block(
     world: &Instance,
@@ -309,6 +369,9 @@ fn handle_entity_inside_block(
                 velocity.y = new_y;
                 physics.reset_fall_distance();
             }
+        }
+        azalea_registry::Block::HoneyBlock => {
+            handle_honey_block_collision(world, block_pos, physics);
         }
         _ => {}
     }
