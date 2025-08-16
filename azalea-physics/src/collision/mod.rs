@@ -208,15 +208,23 @@ pub fn move_colliding(ctx: &mut MoveCtx, mut movement: Vec3) -> Result<(), MoveE
     }
 
     if vertical_collision {
-        // blockBelow.updateEntityAfterFallOn(this.level, this);
-        // the default implementation of updateEntityAfterFallOn sets the y movement to
-        // 0
-        physics.velocity.y = 0.;
+        // For slime blocks, don't reset Y velocity to 0 here since the bounce
+        // is handled in check_fall_damage
+        let registry_block = azalea_registry::Block::from(block_state_below);
+        if registry_block != azalea_registry::Block::SlimeBlock {
+            // blockBelow.updateEntityAfterFallOn(this.level, this);
+            // the default implementation of updateEntityAfterFallOn sets the y movement to
+            // 0
+            physics.velocity.y = 0.;
+        }
     }
 
     if on_ground {
-        // blockBelow.stepOn(this.level, blockPosBelow, blockStateBelow,
-        // this);
+        // Handle special block step-on effects
+        let registry_block = azalea_registry::Block::from(block_state_below);
+        if registry_block == azalea_registry::Block::SlimeBlock {
+            handle_slime_block_step_on(physics);
+        }
     }
 
     // sounds
@@ -262,6 +270,31 @@ fn handle_honey_block_landing(physics: &mut Physics, _block_pos: BlockPos) {
     }
 }
 
+fn handle_slime_block_landing(physics: &mut Physics, _block_pos: BlockPos) {
+    // Slime blocks prevent fall damage completely
+    physics.fall_distance = 0.;
+    
+    // Bounce effect: reverse Y velocity with multiplier
+    // In Minecraft, living entities get 1.0 multiplier, non-living get 0.8
+    // Since we're dealing with players/bots, we use 1.0
+    if physics.velocity.y < 0. {
+        physics.velocity.y = -physics.velocity.y;
+    }
+}
+
+fn handle_slime_block_step_on(physics: &mut Physics) {
+    // Slime block stepping effect: slow down horizontal movement when walking
+    let velocity = &mut physics.velocity;
+    let abs_y_velocity = velocity.y.abs();
+    
+    // Only apply if vertical velocity is small and entity is not stepping off blocks
+    if abs_y_velocity < 0.1 {
+        let factor = 0.4 + abs_y_velocity * 0.2;
+        velocity.x *= factor;
+        velocity.z *= factor;
+    }
+}
+
 fn check_fall_damage(
     physics: &mut Physics,
     delta_y: f64,
@@ -273,13 +306,21 @@ fn check_fall_damage(
     }
 
     if physics.on_ground() {
-        // Handle honey block landing effects
         let registry_block = azalea_registry::Block::from(block_state_below);
-        if registry_block == azalea_registry::Block::HoneyBlock {
-            handle_honey_block_landing(physics, block_pos_below);
+        
+        // Handle special block landing effects
+        match registry_block {
+            azalea_registry::Block::HoneyBlock => {
+                handle_honey_block_landing(physics, block_pos_below);
+            }
+            azalea_registry::Block::SlimeBlock => {
+                handle_slime_block_landing(physics, block_pos_below);
+            }
+            _ => {
+                // Normal fall damage handling would go here
+                physics.fall_distance = 0.;
+            }
         }
-
-        physics.fall_distance = 0.;
     }
 }
 

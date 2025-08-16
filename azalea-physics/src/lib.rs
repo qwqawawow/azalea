@@ -334,6 +334,19 @@ fn update_sliding_velocity_on_honey_block(physics: &mut Physics) {
     }
 }
 
+fn handle_slime_block_collision(physics: &mut Physics) {
+    // Slime block stepping effect: slow down horizontal movement
+    let velocity = &mut physics.velocity;
+    let abs_y_velocity = velocity.y.abs();
+    
+    // Only apply if velocity is small (similar to Minecraft's onSteppedOn)
+    if abs_y_velocity < 0.1 {
+        let factor = 0.4 + abs_y_velocity * 0.2;
+        velocity.x *= factor;
+        velocity.z *= factor;
+    }
+}
+
 // BlockBehavior.entityInside
 fn handle_entity_inside_block(
     world: &Instance,
@@ -372,6 +385,9 @@ fn handle_entity_inside_block(
         }
         azalea_registry::Block::HoneyBlock => {
             handle_honey_block_collision(world, block_pos, physics);
+        }
+        azalea_registry::Block::SlimeBlock => {
+            handle_slime_block_collision(physics);
         }
         _ => {}
     }

@@ -551,8 +551,126 @@ fn test_afk_pool() {
             if blocks_visited.len() == 8 {
                 loops_done += 1;
                 blocks_visited.clear();
-            }
-        }
+}
+
+#[test]
+fn test_slime_block_bounce() {
+    let mut app = make_test_app();
+    let world_lock = insert_overworld(&mut app);
+    let mut partial_world = PartialInstance::default();
+
+    partial_world.chunks.set(
+        &ChunkPos { x: 0, z: 0 },
+        Some(Chunk::default()),
+        &mut world_lock.write().chunks,
+    );
+    
+    let entity = app
+        .world_mut()
+        .spawn((
+            EntityBundle::new(
+                Uuid::nil(),
+                Vec3 {
+                    x: 0.5,
+                    y: 75.,
+                    z: 0.5,
+                },
+                azalea_registry::EntityKind::Player,
+                ResourceLocation::new("minecraft:overworld"),
+            ),
+            MinecraftEntityId(0),
+            LocalEntity,
+            HasClientLoaded,
+        ))
+        .id();
+    
+    // Place a slime block
+    let block_state = partial_world.chunks.set_block_state(
+        BlockPos { x: 0, y: 69, z: 0 },
+        azalea_registry::Block::SlimeBlock.into(),
+        &world_lock.write().chunks,
+    );
+    assert!(
+        block_state.is_some(),
+        "Block state should exist, if this fails that means the chunk wasn't loaded and the block didn't get placed"
+    );
+    
+    // Let the entity fall for several ticks
+    for _ in 0..30 {
+        app.world_mut().run_schedule(GameTick);
+        app.update();
+    }
+    
+    let entity_pos = *app.world_mut().get::<Position>(entity).unwrap();
+    let entity_physics = app.world_mut().get::<Physics>(entity).unwrap();
+    
+    // Entity should be on the slime block (y = 70) and should have upward velocity from bounce
+    assert_eq!(entity_pos.y, 70.);
+    assert!(entity_physics.velocity.y > 0., "Entity should have positive Y velocity after bouncing on slime block");
+    assert_eq!(entity_physics.fall_distance, 0., "Fall distance should be reset after landing on slime block");
+}
+
+#[test]
+fn test_slime_block_movement_slowdown() {
+    let mut app = make_test_app();
+    let world_lock = insert_overworld(&mut app);
+    let mut partial_world = PartialInstance::default();
+
+    partial_world.chunks.set(
+        &ChunkPos { x: 0, z: 0 },
+        Some(Chunk::default()),
+        &mut world_lock.write().chunks,
+    );
+    
+    let entity = app
+        .world_mut()
+        .spawn((
+            EntityBundle::new(
+                Uuid::nil(),
+                Vec3 {
+                    x: 0.5,
+                    y: 70.,
+                    z: 0.5,
+                },
+                azalea_registry::EntityKind::Player,
+                ResourceLocation::new("minecraft:overworld"),
+            ),
+            MinecraftEntityId(0),
+            LocalEntity,
+            HasClientLoaded,
+        ))
+        .id();
+    
+    // Place a slime block
+    let block_state = partial_world.chunks.set_block_state(
+        BlockPos { x: 0, y: 69, z: 0 },
+        azalea_registry::Block::SlimeBlock.into(),
+        &world_lock.write().chunks,
+    );
+    assert!(
+        block_state.is_some(),
+        "Block state should exist"
+    );
+    
+    // Set initial horizontal velocity
+    {
+        let mut entity_physics = app.world_mut().get_mut::<Physics>(entity).unwrap();
+        entity_physics.velocity.x = 0.5;
+        entity_physics.velocity.z = 0.5;
+        entity_physics.velocity.y = 0.01; // Small Y velocity to trigger slowdown
+        entity_physics.set_on_ground(true);
+    }
+    
+    // Run one physics tick to apply slime block effects
+    app.world_mut().run_schedule(GameTick);
+    app.update();
+    
+    let entity_physics = app.world_mut().get::<Physics>(entity).unwrap();
+    
+    // Horizontal velocity should be reduced due to slime block effect
+    assert!(entity_physics.velocity.x < 0.5, "X velocity should be reduced by slime block");
+    assert!(entity_physics.velocity.z < 0.5, "Z velocity should be reduced by slime block");
+}        }
     }
 
     assert_eq!(
